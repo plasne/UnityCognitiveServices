@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using Assets.Scripts;
 using Assets.Scripts.Helper;
 using UnityEngine;
@@ -95,40 +96,57 @@ public class FaceApiManager : MonoBehaviour
                 }
             }
 
-            var index = 0;
-            var xPosition = 55f;
+            var index = 1;
+            var xPosition = -50f;
             var yPosition = 0f;
 
             foreach (var item in resultObject.FaceApiResultItems)
             {
 
                 xPosition = (index % 3 == 0) ? 55f : xPosition + 100f;
-                yPosition = yPosition + ((index % 3 == 0) ? 100f : 0); 
+                yPosition = yPosition - ((index % 3 == 0) ? 50f : 0);
 
                 index = index + 1;
-
-                if (item.faceAttributes.gender == "female")
+                var characterPrefab = Resources.Load("character") as GameObject;
+                var character = GameObject.Instantiate(characterPrefab);
+                if (character == null)
                 {
 
-                    var f = Instantiate(Female) as GameObject;
-
-                    f.name = string.Format("female-{0}", item.faceId);
-                    f.transform.SetParent(canvas.transform);
-                    f.transform.localPosition = new Vector3(xPosition, yPosition, 0f);
-                    f.transform.localScale = new Vector3(10.0f, 10.0f, 0.0f);
-                    f.GetComponent<Character>().Age = item.faceAttributes.age;
-
-
+                    return;
                 }
-                else if (item.faceAttributes.gender == "male")
-                {
-                    var m = Instantiate(Male) as GameObject;
-                    m.name = string.Format("male-{0}", item.faceId);
-                    m.transform.SetParent(canvas.transform);
-                    m.transform.localPosition = new Vector3(xPosition, yPosition, 0f);
-                    m.transform.localScale = new Vector3(10.0f, 10.0f, 0.0f);
+                character.name = string.Format("{0}", item.faceId);
+                character.transform.SetParent(canvas.transform);
+                character.transform.localPosition = new Vector3(xPosition, yPosition, 0f);
+                character.transform.localScale = new Vector3(10f, 10f, 0.0f);
 
-                    m.GetComponent<Character>().Age = item.faceAttributes.age;
+
+                //if (item.faceAttributes.gender == "female")
+                //{
+
+                //    character = Instantiate(Female) as GameObject;
+
+                //    character.name = string.Format("female-{0}", item.faceId);
+
+
+
+                //}
+                //else
+                //{
+                //    character = Instantiate(Male) as GameObject;
+                //    character.name = string.Format("male-{0}", item.faceId);
+                //}
+
+
+                character.GetComponent<Character>().Gender = item.faceAttributes.gender;
+                character.GetComponent<Character>().Age = item.faceAttributes.age;
+                character.GetComponent<Character>().HasGlasses = (item.faceAttributes.glasses != "NoGlasses");
+
+                var bestEmotion = item.faceAttributes.emotion.GetType().GetFields()
+                    .OrderByDescending(e => e.GetValue(item.faceAttributes.emotion)).FirstOrDefault();
+                if (bestEmotion != null)
+                {
+                    character.GetComponent<Character>().Emotion = bestEmotion.Name;
+                    character.GetComponent<Character>().EmotionValue = (float)bestEmotion.GetValue(item.faceAttributes.emotion);
 
                 }
 

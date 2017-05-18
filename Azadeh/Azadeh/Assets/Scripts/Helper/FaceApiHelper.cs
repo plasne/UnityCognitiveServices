@@ -21,29 +21,60 @@ namespace Assets.Scripts.Helper
         public string faceId;
         public FaceRectangle faceRectangle;
         public FaceAttributes faceAttributes;
+
     }
     [Serializable]
     public class FaceRectangle
     {
-        public double top;
-        public double left;
-        public double width;
-        public double height;
+        public float top;
+        public float left;
+        public float width;
+        public float height;
     }
 
     [Serializable]
     public class FaceAttributes
     {
         public string gender;
+        public string glasses;
         public float age;
+        public FacialHair facialHair;
+        public Emotion emotion;
+        
+
     }
+    [Serializable]
+    public class Emotion
+    {
+
+        public float anger;
+        public float contempt;
+        public float disgust;
+        public float fear;
+        public float happiness;
+        public float neutral;
+        public float sadness;
+        public float surprise;
+    }
+
+    [Serializable]
+    public class FacialHair
+    {
+        public float moustache;
+        public float beard;
+        public float sideburns;
+    }
+
+
+   
+    
 
     public class FaceApiHelper
     {
-       
+
         private readonly MonoBehaviour _caller;
         private readonly string _subscriptionKey;
-        private readonly string _queryString = "returnFaceId=true&returnFaceLandmarks=false&returnFaceAttributes=age,gender";
+        private readonly string _queryString = "returnFaceId=true&returnFaceLandmarks=false&returnFaceAttributes=age,gender,facialhair,glasses,emotion";//,
 
         private string uri = "https://{location}.api.cognitive.microsoft.com/face/v1.0/";
         private string _results;
@@ -74,9 +105,9 @@ namespace Assets.Scripts.Helper
         }
 
 
-        internal WWW Detect(byte[] imageByteData,  Action onCompleteCallback)
+        internal WWW Detect(byte[] imageByteData, Action onCompleteCallback)
         {
-            
+
             var requesturi = uri + "detect?" + _queryString;
             var www = new WWW(requesturi, imageByteData, _headers);
             _caller.StartCoroutine(WaitForRequest(www, onCompleteCallback));
