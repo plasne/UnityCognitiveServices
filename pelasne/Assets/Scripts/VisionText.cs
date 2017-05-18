@@ -1,19 +1,28 @@
-﻿using System;
+﻿using Promises;
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Xml.Serialization;
 using UnityEngine;
 
 public class VisionText : Vision
 {
 
-    // locals
-    string accessToken;
-    DateTime lastToken = DateTime.MinValue;
+    // public
+    public string VisionKey;
+    public string TranslationKey;
+    public string Region;
+    public string TranslateTo;
+
+    // local
+    private string accessToken;
+    private DateTime lastToken = DateTime.MinValue;
 
     private void AddCertificateChainValidation()
     {
@@ -43,8 +52,17 @@ public class VisionText : Vision
         };
     }
 
-    private void QueryForTranslation(string data, string from, string to, Queue<Action> callchain, OnMessageHandler callback)
+    [Serializable]
+    [XmlRoot("xml")]
+    public class TranslationResponse
     {
+        [XmlElement("string", Namespace = "http://schemas.microsoft.com/2003/10/Serialization/")]
+        public string text;
+    }
+
+    private Promise<string> QueryForTranslation(string data, string from, string to)
+    {
+        Deferred<string> deferred = new Deferred<string>();
 
         // register callback support (required for WebClient)
         if (ServicePointManager.ServerCertificateValidationCallback == null) AddCertificateChainValidation();
@@ -60,24 +78,29 @@ public class VisionText : Vision
                     if (e.Cancelled)
                     {
                         _status = StatusOptions.failed;
-                        RaiseError("web call was cancelled.", callback);
+                        deferred.Reject("web call was cancelled.");
                     }
                     else if (e.Error != null)
                     {
                         _status = StatusOptions.failed;
-                        RaiseError(e.Error.Message, callback);
+                        deferred.Reject(e.Error.Message);
                     }
                     else
                     {
-                        accessToken = System.Text.Encoding.Default.GetString(e.Result);
-                        lastToken = DateTime.Now;
-                        if (callchain.Count > 0) callchain.Dequeue().Invoke();
+                        string response_string = System.Text.Encoding.Default.GetString(e.Result);
+                        string encapsulated = "<xml>" + response_string + "</xml>";
+                        XmlSerializer serializer = new XmlSerializer(typeof(TranslationResponse));
+                        using (TextReader reader = new StringReader(encapsulated))
+                        {
+                            TranslationResponse result = (TranslationResponse) serializer.Deserialize(reader);
+                            deferred.Resolve(result.text);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
                     _status = StatusOptions.failed;
-                    RaiseError(ex.Message, callback);
+                    deferred.Reject(ex.Message);
                 }
                 Reset();
             };
@@ -85,10 +108,12 @@ public class VisionText : Vision
             client.DownloadDataAsync(new System.Uri("https://api.microsofttranslator.com/v2/http.svc/Translate?" + parameters));
         }
 
+        return deferred.Promise();
     }
 
-    private void QueryForAccessToken(Queue<Action> callchain, OnMessageHandler callback)
+    private Promise<string> QueryForAccessToken()
     {
+        Deferred<string> deferred = new Deferred<string>();
 
         // register callback support (required for WebClient)
         if (ServicePointManager.ServerCertificateValidationCallback == null) AddCertificateChainValidation();
@@ -96,38 +121,40 @@ public class VisionText : Vision
         // get an access token
         using (WebClient client = new WebClient())
         {
-            client.Headers.Add("Ocp-Apim-Subscription-Key", "ac1ce74edcb14450b23f8af6afec84fd");
-            client.DownloadDataCompleted += (object sender, DownloadDataCompletedEventArgs e) =>
+            client.Headers.Add("Ocp-Apim-Subscription-Key", TranslationKey);
+            client.UploadDataCompleted += (object sender, UploadDataCompletedEventArgs e) =>
             {
                 try
                 {
                     if (e.Cancelled)
                     {
                         _status = StatusOptions.failed;
-                        RaiseError("web call was cancelled.", callback);
+                        deferred.Reject("web call was cancelled.");
                     }
                     else if (e.Error != null)
                     {
                         _status = StatusOptions.failed;
-                        RaiseError(e.Error.Message, callback);
+                        deferred.Reject(e.Error.Message);
                     }
                     else
                     {
                         accessToken = System.Text.Encoding.Default.GetString(e.Result);
                         lastToken = DateTime.Now;
-                        if (callchain.Count > 0) callchain.Dequeue().Invoke();
+                        deferred.Resolve();
                     }
                 }
                 catch (Exception ex)
                 {
                     _status = StatusOptions.failed;
-                    RaiseError(ex.Message, callback);
+                    deferred.Reject(ex.Message);
                 }
                 Reset();
             };
-            client.DownloadDataAsync(new System.Uri("https://api.cognitive.microsoft.com/sts/v1.0/issueToken"));
+            byte[] buffer = { 0 };
+            client.UploadDataAsync(new System.Uri("https://api.cognitive.microsoft.com/sts/v1.0/issueToken"), buffer);
         }
 
+        return deferred.Promise();
     }
 
     [Serializable]
@@ -168,7 +195,7 @@ public class VisionText : Vision
         // make the web call
         using (WebClient client = new WebClient())
         {
-            client.Headers.Add("Ocp-Apim-Subscription-Key", "d0584ebec5524eafbf5f2d8ca4fc0ae5");
+            client.Headers.Add("Ocp-Apim-Subscription-Key", VisionKey);
             client.Headers.Add("Content-Type", "application/octet-stream");
             client.UploadDataCompleted += (object sender, UploadDataCompletedEventArgs e) =>
             {
@@ -203,7 +230,35 @@ public class VisionText : Vision
                                     lines.Add(string.Join(" ", words.ToArray()));
                                 });
                             });
-                            RaiseMessage(new Message() { language = response_object.language, lines = lines }, callback);
+
+                            // translate if requested
+                            if (!string.IsNullOrEmpty(TranslationKey) && !string.IsNullOrEmpty(TranslateTo) && TranslateTo != response_object.language)
+                            {
+                                Promise<string> accessToken_promise = QueryForAccessToken();
+                                accessToken_promise.Done(() =>
+                                {
+                                    Promise<string> translation_promise = QueryForTranslation(string.Join(" ", lines.ToArray()), response_object.language, "en");
+                                    translation_promise.Done((msg) =>
+                                    {
+                                        List<string> translated = new List<string>();
+                                        translated.Add(msg);
+                                        RaiseMessage(new Message() { language = "en", lines = translated }, callback);
+                                    });
+                                    translation_promise.Fail((msg) =>
+                                    {
+                                        RaiseError(msg, callback);
+                                    });
+                                });
+                                accessToken_promise.Fail((msg) =>
+                                {
+                                    RaiseError(msg, callback);
+                                });
+                            }
+                            else
+                            {
+                                RaiseMessage(new Message() { language = response_object.language, lines = lines }, callback);
+                            }
+
                         }
                     }
                 }
@@ -214,7 +269,7 @@ public class VisionText : Vision
                 }
                 Reset();
             };
-            client.UploadDataAsync(new System.Uri("https://westus.api.cognitive.microsoft.com/vision/v1.0/ocr?language=unk&detectOrientation=false"), data);
+            client.UploadDataAsync(new System.Uri("https://" + Region + ".api.cognitive.microsoft.com/vision/v1.0/ocr?language=unk&detectOrientation=false"), data);
         }
 
     }

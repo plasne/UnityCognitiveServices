@@ -491,7 +491,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6262c1ce4714aa34da19ec3b434f4567, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  texture: {fileID: 2800000, guid: 3ed0817b2d775ed4ebd3f502f052f6ed, type: 3}
+  texture: {fileID: 2800000, guid: d2938a5396cc8d64192a47319022df5a, type: 3}
+  VisionKey: d0584ebec5524eafbf5f2d8ca4fc0ae5
+  TranslationKey: ac1ce74edcb14450b23f8af6afec84fd
+  Region: westus
+  TranslateTo: en
 --- !u!4 &1375943233
 Transform:
   m_ObjectHideFlags: 0
